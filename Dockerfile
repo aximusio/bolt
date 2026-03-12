@@ -35,10 +35,8 @@ RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 FROM build AS prod-deps
 WORKDIR /app
 
-# Install @remix-run/serve as production dependency (needed for SSR server)
-RUN pnpm add --prod @remix-run/serve
-
-# Keep only production dependencies
+# Don't add or install anything - keep build's node_modules as is
+# Just prune to remove devDependencies
 RUN pnpm prune --prod --ignore-scripts
 
 
@@ -76,12 +74,68 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=prod-deps /app/build /app/build
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/package.json /app/package.json
-COPY --from=prod-deps /app/pnpm-lock.yaml /app/pnpm-lock.yaml
 
-# Debug: Check what's installed
-RUN echo "=== Checking installed packages ===" && \
-    ls -la /app/node_modules/@remix-run/ 2>/dev/null || echo "No @remix-run packages found" && \
-    test -f /app/node_modules/@remix-run/serve/dist/cli.js && echo "remix-serve CLI found" || echo "remix-serve CLI NOT found"
+# Create a standalone Node.js server for Remix
+RUN echo 'import { createRequestHandler } from "@remix-run/node";\n\
+import { broadcastDevReady, installGlobals } from "@remix-run/node";\n\
+import http from "http";\n\
+import { fileURLToPath } from "url";\n\
+import { dirname, join } from "path";\n\
+\n\
+const __filename = fileURLToPath(import.meta.url);\n\
+const __dirname = dirname(__filename);\n\
+\n\
+installGlobals();\n\
+\n\
+const BUILD_PATH = join(__dirname, "build", "server", "index.js");\n\
+\n\
+const build = await import(BUILD_PATH);\n\
+\n\
+const requestHandler = createRequestHandler({ build, mode: process.env.NODE_ENV });\n\
+\n\
+const server = http.createServer(async (req, res) => {\n\
+  try {\n\
+    const request = new Request(`http://${req.headers.host}${req.url}`, {\n\
+      method: req.method,\n\
+      headers: Object.fromEntries(\n\
+        Object.entries(req.headers).filter(([key, value]) => value !== undefined)\n\
+      ),\n\
+      body: req.method !== "GET" && req.method !== "HEAD" ? req : undefined,\n\
+    });\n\
+\n\
+    const response = await requestHandler(request);\n\
+\n\
+    res.statusCode = response.status;\n\
+    for (const [key, value] of response.headers.entries()) {\n\
+      res.setHeader(key, value);\n\
+    }\n\
+\n\
+    if (response.body) {\n\
+      const reader = response.body.getReader();\n\
+      while (true) {\n\
+        const { done, value } = await reader.read();\n\
+        if (done) break;\n\
+        res.write(value);\n\
+      }\n\
+    }\n\
+\n\
+    res.end();\n\
+  } catch (error) {\n\
+    console.error("Error handling request:", error);\n\
+    res.statusCode = 500;\n\
+    res.end("Internal Server Error");\n\
+  }\n\
+});\n\
+\n\
+const port = process.env.PORT || 5173;\n\
+const host = process.env.HOST || "0.0.0.0";\n\
+\n\
+server.listen(port, host, () => {\n\
+  console.log(`✅ Remix server listening on http://${host}:${port}`);\n\
+  if (process.env.NODE_ENV === "development") {\n\
+    broadcastDevReady(build);\n\
+  }\n\
+});' > /app/server.mjs
 
 EXPOSE 5173
 
@@ -89,8 +143,8 @@ EXPOSE 5173
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
     CMD curl -fsS http://localhost:5173/ || exit 1
 
-# Use pnpm to execute remix-serve
-CMD ["pnpm", "exec", "remix-serve", "./build/server/index.js"]
+# Run the standalone server
+CMD ["node", "server.mjs"]
 
 
 # ---- development stage ----
