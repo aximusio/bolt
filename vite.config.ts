@@ -51,6 +51,8 @@ export default defineConfig((config) => {
           v3_throwAbortReason: true,
           v3_lazyRouteDiscovery: true,
         },
+        // Build server as CommonJS so Node's react-dom/server (CJS) works
+        serverModuleFormat: 'cjs',
       }),
       UnoCSS(),
       tsconfigPaths(),
