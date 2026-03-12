@@ -77,10 +77,8 @@ COPY --from=prod-deps /app/build /app/build
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/package.json /app/package.json
 
-# Create a simple start script using remix-serve
-RUN echo '#!/bin/sh\n\
-exec npx remix-serve build/server/index.js' > /app/start.sh && \
-    chmod +x /app/start.sh
+# Verify the build structure
+RUN ls -la /app/build/server/ || echo "Server build directory not found"
 
 EXPOSE 5173
 
@@ -88,8 +86,8 @@ EXPOSE 5173
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
     CMD curl -fsS http://localhost:5173/ || exit 1
 
-# Start using remix-serve (proper Remix SSR runtime)
-CMD ["/app/start.sh"]
+# Use remix-serve directly - PORT and HOST env vars are already set
+CMD ["node_modules/.bin/remix-serve", "./build/server/index.js"]
 
 
 # ---- development stage ----
