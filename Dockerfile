@@ -2,16 +2,17 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
-# CI-friendly env
+# CI-friendly env - but allow devDependencies for build
 ENV HUSKY=0
 ENV CI=true
+# Don't set NODE_ENV=production here - we need devDependencies to build
 
 # Use pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 # Ensure git is available for build and runtime scripts
 RUN apt-get update && apt-get install -y --no-install-recommends git \
-  && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Accept (optional) build-time public URL for Remix/Vite (Coolify can pass it)
 ARG VITE_PUBLIC_APP_URL
@@ -23,8 +24,9 @@ RUN pnpm fetch
 
 # Copy source and build
 COPY . .
-# install with dev deps (needed to build)
-RUN pnpm install --offline --frozen-lockfile
+# install ALL deps (including devDependencies needed for build)
+# Ignore scripts to prevent husky issues in production builds
+RUN pnpm install --offline --frozen-lockfile --ignore-scripts
 
 # Build the Remix app (SSR + client)
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
@@ -32,8 +34,10 @@ RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 # ---- production dependencies stage ----
 FROM build AS prod-deps
 
-# Keep only production deps for runtime
+# Keep production deps + wrangler (needed for runtime)
 RUN pnpm prune --prod --ignore-scripts
+# Re-install wrangler as it's needed for runtime
+RUN pnpm add -D wrangler --ignore-scripts
 
 
 # ---- production stage ----
@@ -59,7 +63,7 @@ ENV WRANGLER_SEND_METRICS=false \
 
 # Install curl for healthchecks and copy bindings script
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-  && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy built files and scripts
 COPY --from=prod-deps /app/build /app/build
@@ -78,7 +82,7 @@ EXPOSE 5173
 
 # Healthcheck for deployment platforms
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
-  CMD curl -fsS http://localhost:5173/ || exit 1
+    CMD curl -fsS http://localhost:5173/ || exit 1
 
 # Start using dockerstart script with Wrangler
 CMD ["pnpm", "run", "dockerstart"]
