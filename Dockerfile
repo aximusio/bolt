@@ -33,13 +33,14 @@ RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 
 # ---- production dependencies stage ----
 FROM build AS prod-deps
+WORKDIR /app
 
 # Keep only production dependencies
 RUN pnpm prune --prod --ignore-scripts
 
 
 # ---- production stage ----
-FROM prod-deps AS bolt-ai-production
+FROM node:22-bookworm-slim AS bolt-ai-production
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -59,27 +60,30 @@ ENV VITE_LOG_LEVEL=${VITE_LOG_LEVEL} \
 # Note: API keys should be provided at runtime via docker run -e or docker-compose
 # Example: docker run -e OPENAI_API_KEY=your_key_here ...
 
+# Enable corepack for pnpm (needed for node runtime)
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
 # Install curl for healthchecks and ca-certificates for SSL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy built files
+# Copy built files and production dependencies from prod-deps stage
 COPY --from=prod-deps /app/build /app/build
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/package.json /app/package.json
 
 # Create a simple start script for production
 RUN echo '#!/bin/sh\n\
-node build/server/index.js' > /app/start.sh && \
+    node build/server/index.js' > /app/start.sh && \
     chmod +x /app/start.sh
 
 EXPOSE 5173
 
 # Healthcheck for deployment platforms
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
-  CMD curl -fsS http://localhost:5173/ || exit 1
+    CMD curl -fsS http://localhost:5173/ || exit 1
 
 # Start using Node.js directly (more stable than wrangler in Docker)
 CMD ["/app/start.sh"]
