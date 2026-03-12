@@ -77,65 +77,65 @@ COPY --from=prod-deps /app/package.json /app/package.json
 
 # Create a standalone Node.js server for Remix
 RUN echo 'import { createRequestHandler } from "@remix-run/node";\n\
-import { broadcastDevReady, installGlobals } from "@remix-run/node";\n\
-import http from "http";\n\
-import { fileURLToPath } from "url";\n\
-import { dirname, join } from "path";\n\
-\n\
-const __filename = fileURLToPath(import.meta.url);\n\
-const __dirname = dirname(__filename);\n\
-\n\
-installGlobals();\n\
-\n\
-const BUILD_PATH = join(__dirname, "build", "server", "index.js");\n\
-\n\
-const build = await import(BUILD_PATH);\n\
-\n\
-const requestHandler = createRequestHandler({ build, mode: process.env.NODE_ENV });\n\
-\n\
-const server = http.createServer(async (req, res) => {\n\
-  try {\n\
+    import { broadcastDevReady, installGlobals } from "@remix-run/node";\n\
+    import http from "http";\n\
+    import { fileURLToPath } from "url";\n\
+    import { dirname, join } from "path";\n\
+    \n\
+    const __filename = fileURLToPath(import.meta.url);\n\
+    const __dirname = dirname(__filename);\n\
+    \n\
+    installGlobals();\n\
+    \n\
+    const BUILD_PATH = join(__dirname, "build", "server", "index.js");\n\
+    \n\
+    const build = await import(BUILD_PATH);\n\
+    \n\
+    const requestHandler = createRequestHandler({ build, mode: process.env.NODE_ENV });\n\
+    \n\
+    const server = http.createServer(async (req, res) => {\n\
+    try {\n\
     const request = new Request(`http://${req.headers.host}${req.url}`, {\n\
-      method: req.method,\n\
-      headers: Object.fromEntries(\n\
-        Object.entries(req.headers).filter(([key, value]) => value !== undefined)\n\
-      ),\n\
-      body: req.method !== "GET" && req.method !== "HEAD" ? req : undefined,\n\
+    method: req.method,\n\
+    headers: Object.fromEntries(\n\
+    Object.entries(req.headers).filter(([key, value]) => value !== undefined)\n\
+    ),\n\
+    body: req.method !== "GET" && req.method !== "HEAD" ? req : undefined,\n\
     });\n\
-\n\
+    \n\
     const response = await requestHandler(request);\n\
-\n\
+    \n\
     res.statusCode = response.status;\n\
     for (const [key, value] of response.headers.entries()) {\n\
-      res.setHeader(key, value);\n\
+    res.setHeader(key, value);\n\
     }\n\
-\n\
+    \n\
     if (response.body) {\n\
-      const reader = response.body.getReader();\n\
-      while (true) {\n\
-        const { done, value } = await reader.read();\n\
-        if (done) break;\n\
-        res.write(value);\n\
-      }\n\
+    const reader = response.body.getReader();\n\
+    while (true) {\n\
+    const { done, value } = await reader.read();\n\
+    if (done) break;\n\
+    res.write(value);\n\
     }\n\
-\n\
+    }\n\
+    \n\
     res.end();\n\
-  } catch (error) {\n\
+    } catch (error) {\n\
     console.error("Error handling request:", error);\n\
     res.statusCode = 500;\n\
     res.end("Internal Server Error");\n\
-  }\n\
-});\n\
-\n\
-const port = process.env.PORT || 5173;\n\
-const host = process.env.HOST || "0.0.0.0";\n\
-\n\
-server.listen(port, host, () => {\n\
-  console.log(`✅ Remix server listening on http://${host}:${port}`);\n\
-  if (process.env.NODE_ENV === "development") {\n\
+    }\n\
+    });\n\
+    \n\
+    const port = process.env.PORT || 5173;\n\
+    const host = process.env.HOST || "0.0.0.0";\n\
+    \n\
+    server.listen(port, host, () => {\n\
+    console.log(`✅ Remix server listening on http://${host}:${port}`);\n\
+    if (process.env.NODE_ENV === "development") {\n\
     broadcastDevReady(build);\n\
-  }\n\
-});' > /app/server.mjs
+    }\n\
+    });' > /app/server.mjs
 
 EXPOSE 5173
 
