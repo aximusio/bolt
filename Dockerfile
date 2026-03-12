@@ -76,9 +76,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=prod-deps /app/build /app/build
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/package.json /app/package.json
+COPY --from=prod-deps /app/pnpm-lock.yaml /app/pnpm-lock.yaml
 
-# Verify the build structure
-RUN ls -la /app/build/server/ || echo "Server build directory not found"
+# Debug: Check what's installed
+RUN echo "=== Checking installed packages ===" && \
+    ls -la /app/node_modules/@remix-run/ 2>/dev/null || echo "No @remix-run packages found" && \
+    test -f /app/node_modules/@remix-run/serve/dist/cli.js && echo "remix-serve CLI found" || echo "remix-serve CLI NOT found"
 
 EXPOSE 5173
 
@@ -86,8 +89,8 @@ EXPOSE 5173
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
     CMD curl -fsS http://localhost:5173/ || exit 1
 
-# Use remix-serve directly - PORT and HOST env vars are already set
-CMD ["node_modules/.bin/remix-serve", "./build/server/index.js"]
+# Use pnpm to execute remix-serve
+CMD ["pnpm", "exec", "remix-serve", "./build/server/index.js"]
 
 
 # ---- development stage ----
